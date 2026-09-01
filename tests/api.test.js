@@ -5,8 +5,8 @@ const assert = require('node:assert');
 const { Pool } = require('pg');
 
 process.env.CORS_ORIGINS = '*';
-const dbMod = require('../api/lib/db.cjs');
-const http = require('../api/lib/http.cjs');
+const dbMod = require('../api/lib-db.js');
+const http = require('../api/lib-http.js');
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 

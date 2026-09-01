@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 
 process.env.CORS_ORIGINS = '*';
-const http = require('../api/lib/http.cjs');
+const http = require('../api/lib-http.js');
 
 test('parsePositiveInt accepts integers', () => {
   assert.strictEqual(http.parsePositiveInt('5', 'x'), 5);
