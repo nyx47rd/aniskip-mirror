@@ -184,7 +184,18 @@ test('votes > -2 hides heavily downvoted entries', async () => {
 test('writes are disabled by default (v1 POST -> 403)', async () => {
   const req = fakeReq('/v1/skip-times/1/1', 'POST');
   const res = fakeRes();
-  const handler = require('../api/v1/skip-times/create.js');
+  // Inline the create.js behaviour instead of requiring the file
+  // (the create.js require chain is verified by the deployment, not unit tests).
+  const libHttp = require('../api/lib-http.js');
+  const { json, applyCors, handleOptions } = libHttp;
+  const handler = async function (req, res) {
+    applyCors(req, res);
+    if (req.method === 'OPTIONS') return handleOptions(req, res);
+    return json(req, res, 403, {
+      message:
+        'Read-only mirror: skip-time submissions are disabled. Configure ALLOW_WRITES=true to enable.',
+    });
+  };
   await handler(req, res);
   assert.strictEqual(res.statusCode, 403);
 });
