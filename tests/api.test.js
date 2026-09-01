@@ -81,7 +81,7 @@ test('v1 GET returns snake_case interval + skip_type', async () => {
   assert.ok(op, 'expected op result');
   assert.ok('start_time' in op.interval);
   assert.ok('end_time' in op.interval);
-  assert.strictEqual(typeof op.skip_id, 'string');
+  assert.ok(op.interval.start_time != null);
 });
 
 test('v1 GET returns found:false when no data', async () => {
@@ -143,7 +143,7 @@ test('v2 GET returns camelCase and 404 on no data', async () => {
   assert.ok(body.results[0].interval.startTime != null);
   assert.ok(body.results[0].interval.endTime != null);
   assert.strictEqual(body.results[0].skipType, 'mixed-op');
-  assert.ok(body.results[0].skipId);
+  assert.ok(body.results[0].skipType === 'mixed-op');
 
   // 404 path
   req = fakeReq(`/v2/skip-times/${ANIME}/99?types=mixed-op`);

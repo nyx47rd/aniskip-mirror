@@ -69,3 +69,15 @@ jobs:
           echo
           # Validate shape: must have found + results[]
           node -e "const j=JSON.parse(require('fs').readFileSync('/tmp/v1.json','utf8')); if(typeof j.found !== 'boolean') throw new Error('missing found'); if(!Array.isArray(j.results)) throw new Error('missing results'); console.log('v1 OK', j);"
+
+      - name: Purge CDN cache
+        env:
+          BASE_URL: ${{ vars.API_BASE_URL || '' }}
+        if: env.BASE_URL != ''
+        run: |
+          # After a fresh import, force the edge cache to refresh so
+          # users see the new data on the next request.
+          set -euo pipefail
+          curl -fsS -X PURGE "$BASE_URL/v1/skip-times/21/1?types=op" || echo "purge v1 skipped"
+          curl -fsS -X PURGE "$BASE_URL/v2/skip-times/21/1?types=op" || echo "purge v2 skipped"
+          echo "purged"

@@ -267,8 +267,8 @@ All routes accept CORS preflight (`OPTIONS`) and respond with
 | Method | Path | Response shape | Notes |
 |---|---|---|---|
 | GET | `/health` | `{status, service, database, ...}` | 503 if DB unreachable |
-| GET | `/v1/skip-times/:anime_id/:episode_number` | `{found, results:[{interval:{start_time,end_time},skip_type,skip_id,episode_length}]}` | snake_case, always 200 |
-| GET | `/v2/skip-times/:animeId/:episodeNumber` | `{statusCode,message,found,results:[{interval:{startTime,endTime},skipType,skipId,episodeLength}]}` | camelCase, 404 on no data |
+| GET | `/v1/skip-times/:anime_id/:episode_number` | `{found, results:[{interval:{start_time,end_time},skip_type,episode_length}]}` | snake_case, always 200, edge-cached 24h |
+| GET | `/v2/skip-times/:animeId/:episodeNumber` | `{statusCode,message,found,results:[{interval:{startTime,endTime},skipType,episodeLength}]}` | camelCase, 404 on no data, edge-cached 24h |
 | GET | `/v1/rules/:anime_id` | `{found, rules:[...]}` | empty unless `RELATION_RULES_PATH` set |
 | GET | `/v2/relation-rules/:animeId` | `{statusCode,message,found,rules:[...]}` | 404 on empty |
 | POST | `/v1/skip-times/:anime_id/:episode_number` | `403` | disabled (see below) |
@@ -320,7 +320,6 @@ A v1 success looks like:
     {
       "interval": { "start_time": 90.0, "end_time": 180.0 },
       "skip_type": "op",
-      "skip_id": "4f1d2e2a-...",
       "episode_length": 1420.061
     }
   ]

@@ -50,7 +50,6 @@ module.exports = async function handler(req, res) {
             end_time: Number(top.end_time),
           },
           skip_type: top.skip_type,
-          skip_id: top.skip_id,
           episode_length: Number(top.episode_length),
         });
       }
