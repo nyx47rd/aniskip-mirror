@@ -30,11 +30,12 @@ function json(req, res, status, body) {
   applyCors(req, res);
   res.statusCode = status;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
-  // Cache successful GET responses at the CDN edge for 1 day.
-  // Skip-time data is updated weekly so a long cache is safe and
-  // cuts Neon egress dramatically.
+  // Cache successful GET responses at the CDN edge for 1 week.
+  // Skip-time data is updated weekly (Sunday ~03:00 UTC) and the
+  // update-dataset workflow issues a PURGE after each import, so
+  // long cache is safe and cuts Neon egress dramatically.
   if (status === 200 && req.method === 'GET') {
-    res.setHeader('Cache-Control', 'public, s-maxage=86400, stale-while-revalidate=604800');
+    res.setHeader('Cache-Control', 'public, s-maxage=604800, stale-while-revalidate=2592000');
   } else {
     res.setHeader('Cache-Control', 'no-store');
   }
