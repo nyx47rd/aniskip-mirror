@@ -2,7 +2,7 @@
 // public read-only mirror. Clients that need to submit skip times
 // should use the official AniSkip API. We still respond with a
 // well-formed 403 so misconfigured clients fail predictably.
-const {json, handleOptions, applyCors} = require('./lib-http.js');
+const {json, handleOptions, applyCors} = require('../../../lib-http.js');
 
 module.exports = async function handler(req, res) {
   applyCors(req, res);

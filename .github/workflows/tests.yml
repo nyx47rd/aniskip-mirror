@@ -37,6 +37,7 @@ jobs:
         run: |
           psql -h localhost -U postgres -d db -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;" || true
           PGPASSWORD=postgres psql -h localhost -U postgres -d db -f sql/init.sql
+          PGPASSWORD=postgres psql -h localhost -U postgres -d db -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;" || true
           PGPASSWORD=postgres psql -h localhost -U postgres -d db -f sql/migrations/001_relax_constraints.sql
       - name: Run tests
         run: npm test

@@ -54,7 +54,7 @@ async function seed(animeId, episode, rows = []) {
 test('health endpoint returns ok when DB connected', async () => {
   const req = fakeReq('/health');
   const res = fakeRes();
-  const handler = require('../api/health.js').default;
+  const handler = require('../api/health.js');
   await handler(req, res);
   const body = JSON.parse(res.body);
   assert.strictEqual(body.service, 'aniskip-mirror');
@@ -71,7 +71,7 @@ test('v1 GET returns snake_case interval + skip_type', async () => {
   ]);
   const req = fakeReq(`/v1/skip-times/${ANIME}/${EP}?types=op,ed&episode_length=1440`);
   const res = fakeRes();
-  const handler = require('../api/v1/skip-times/[anime_id]/[episode_number].js').default;
+  const handler = require('../api/v1/skip-times/[anime_id]/[episode_number].js');
   await handler(req, res);
   const body = JSON.parse(res.body);
   assert.strictEqual(res.statusCode, 200);
@@ -88,7 +88,7 @@ test('v1 GET returns found:false when no data', async () => {
   const ANIME = 100002;
   const req = fakeReq(`/v1/skip-times/${ANIME}/99?types=op`);
   const res = fakeRes();
-  const handler = require('../api/v1/skip-times/[anime_id]/[episode_number].js').default;
+  const handler = require('../api/v1/skip-times/[anime_id]/[episode_number].js');
   await handler(req, res);
   const body = JSON.parse(res.body);
   assert.strictEqual(res.statusCode, 200);
@@ -99,7 +99,7 @@ test('v1 GET returns found:false when no data', async () => {
 test('v1 GET returns 400 for bad anime id', async () => {
   const req = fakeReq('/v1/skip-times/0/1?types=op');
   const res = fakeRes();
-  const handler = require('../api/v1/skip-times/[anime_id]/[episode_number].js').default;
+  const handler = require('../api/v1/skip-times/[anime_id]/[episode_number].js');
   await handler(req, res);
   assert.strictEqual(res.statusCode, 400);
 });
@@ -114,7 +114,7 @@ test('v1 GET respects episode_length tolerance (±20s)', async () => {
   // Try 1485 -> diff=15 -> match.
   let req = fakeReq(`/v1/skip-times/${ANIME}/${EP}?types=op&episode_length=1485`);
   let res = fakeRes();
-  let handler = require('../api/v1/skip-times/[anime_id]/[episode_number].js').default;
+  let handler = require('../api/v1/skip-times/[anime_id]/[episode_number].js');
   await handler(req, res);
   assert.strictEqual(res.statusCode, 200);
   assert.strictEqual(JSON.parse(res.body).found, true);
@@ -134,7 +134,7 @@ test('v2 GET returns camelCase and 404 on no data', async () => {
   ]);
   let req = fakeReq(`/v2/skip-times/${ANIME}/${EP}?types=mixed-op`);
   let res = fakeRes();
-  let handler = require('../api/v2/skip-times/[animeId]/[episodeNumber].js').default;
+  let handler = require('../api/v2/skip-times/[animeId]/[episodeNumber].js');
   await handler(req, res);
   let body = JSON.parse(res.body);
   assert.strictEqual(res.statusCode, 200);
@@ -158,7 +158,7 @@ test('v2 GET returns camelCase and 404 on no data', async () => {
 test('v2 GET rejects v1-only skip_type with 400', async () => {
   const req = fakeReq('/v2/skip-times/1/1?types=op,invalid-type');
   const res = fakeRes();
-  const handler = require('../api/v2/skip-times/[animeId]/[episodeNumber].js').default;
+  const handler = require('../api/v2/skip-times/[animeId]/[episodeNumber].js');
   await handler(req, res);
   assert.strictEqual(res.statusCode, 400);
 });
@@ -172,7 +172,7 @@ test('votes > -2 hides heavily downvoted entries', async () => {
   ]);
   const req = fakeReq(`/v1/skip-times/${ANIME}/${EP}?types=op`);
   const res = fakeRes();
-  const handler = require('../api/v1/skip-times/[anime_id]/[episode_number].js').default;
+  const handler = require('../api/v1/skip-times/[anime_id]/[episode_number].js');
   await handler(req, res);
   const body = JSON.parse(res.body);
   assert.strictEqual(body.found, true);
@@ -184,7 +184,7 @@ test('votes > -2 hides heavily downvoted entries', async () => {
 test('writes are disabled by default (v1 POST -> 403)', async () => {
   const req = fakeReq('/v1/skip-times/1/1', 'POST');
   const res = fakeRes();
-  const handler = require('../api/v1/skip-times/create.js').default;
+  const handler = require('../api/v1/skip-times/create.js');
   await handler(req, res);
   assert.strictEqual(res.statusCode, 403);
 });
@@ -192,7 +192,7 @@ test('writes are disabled by default (v1 POST -> 403)', async () => {
 test('CORS preflight returns 204 with headers', () => {
   const req = fakeReq('/health', 'OPTIONS');
   const res = fakeRes();
-  const handler = require('../api/health.js').default;
+  const handler = require('../api/health.js');
   return handler(req, res).then(() => {
     assert.strictEqual(res.statusCode, 204);
     assert.ok(res.headers['Access-Control-Allow-Origin']);

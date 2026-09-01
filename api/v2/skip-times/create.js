@@ -1,4 +1,4 @@
-const {json, handleOptions, applyCors} = require('./lib-http.js');
+const {json, handleOptions, applyCors} = require('../../../lib-http.js');
 
 module.exports = async function handler(req, res) {
   applyCors(req, res);
