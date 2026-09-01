@@ -81,3 +81,39 @@ jobs:
           curl -fsS -X PURGE "$BASE_URL/v1/skip-times/21/1?types=op" || echo "purge v1 skipped"
           curl -fsS -X PURGE "$BASE_URL/v2/skip-times/21/1?types=op" || echo "purge v2 skipped"
           echo "purged"
+
+      - name: Sync R2 edge cache
+        env:
+          BASE_URL: ${{ vars.API_BASE_URL || '' }}
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+        # The Cloudflare Worker reads per-anime JSON from R2. After
+        # the weekly Neon import we re-stream the new data into the
+        # bucket via the Vercel admin endpoint, paginated to stay
+        # under the Hobby 10s function timeout. The R2 files have
+        # no cache TTL of their own; the Worker edge-caches the
+        # parsed response for 7 days, so the next user request
+        # after this step will see fresh data.
+        if: env.BASE_URL != '' && env.ADMIN_TOKEN != ''
+        run: |
+          set -euo pipefail
+          offset=0
+          while :; do
+            resp=$(curl -fsS -X POST \
+              -H "x-admin-token: $ADMIN_TOKEN" \
+              "$BASE_URL/admin/upload-r2?offset=$offset&limit=2000")
+            echo "  $resp"
+            ok=$(echo "$resp"   | python3 -c 'import sys,json;print(json.load(sys.stdin).get("ok",0))')
+            err=$(echo "$resp"  | python3 -c 'import sys,json;print(json.load(sys.stdin).get("errs",0))')
+            next=$(echo "$resp" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("next_offset",-1))')
+            if [ "$ok" = "0" ] && [ "$err" = "0" ]; then
+              echo "upload complete (no more rows)"
+              break
+            fi
+            if [ "$next" -le "$offset" ]; then
+              echo "stop: next_offset=$next did not advance"
+              break
+            fi
+            offset=$next
+            sleep 0.5
+          done
+          echo "R2 sync done"
