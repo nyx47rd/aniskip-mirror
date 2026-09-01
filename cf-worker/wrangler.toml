@@ -1,0 +1,12 @@
+name = "aniskip-mirror-cf"
+main = "src/index.js"
+compatibility_date = "2024-09-23"
+
+[vars]
+SERVICE_NAME = "aniskip-mirror-cf"
+
+# R2 bucket binding
+[[r2_buckets]]
+binding = "DATA"
+bucket_name = "aniskip-mirror-data"
+preview_bucket_name = "aniskip-mirror-data-preview"

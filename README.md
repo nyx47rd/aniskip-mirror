@@ -2,7 +2,8 @@
 
 [![Tests](https://github.com/nyx47rd/aniskip-mirror/actions/workflows/tests.yml/badge.svg)](https://github.com/nyx47rd/aniskip-mirror/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Live](https://img.shields.io/badge/live-aniskip--mirror.vercel.app-blue)](https://aniskip-mirror.vercel.app/health)
+[![Live (Vercel)](https://img.shields.io/badge/live-vercel-blue)](https://aniskip-mirror.vercel.app/health)
+[![Live (Cloudflare)](https://img.shields.io/badge/live-cloudflare-orange)](https://aniskip-mirror-cf.yasar-123-sevda.workers.dev/health)
 
 A self-hosted, **AniSkip-compatible** API for anime skip times (opening /
 ending / recap). It pulls the weekly public dataset from
@@ -13,14 +14,21 @@ loads it into PostgreSQL (Neon in production), and serves it through the
 so anime apps that already talk to `api.aniskip.com` can point at your
 URL with no client-side changes.
 
-**Live instance:** <https://aniskip-mirror.vercel.app>
+**Live instances:**
+
+| Backend | URL | Best for |
+|---|---|---|
+| Vercel + Neon (source of truth) | <https://aniskip-mirror.vercel.app> | Always-fresh data, low-cold-start in EU |
+| Cloudflare Worker + R2 (edge cache) | <https://aniskip-mirror-cf.yasar-123-sevda.workers.dev> | Global low-latency, scales with traffic |
 
 ```bash
-# One-liner health check (mirror + database)
+# Health check (both backends respond with the same shape)
 curl -s https://aniskip-mirror.vercel.app/health | jq
+curl -s https://aniskip-mirror-cf.yasar-123-sevda.workers.dev/health | jq
 
 # Get OP + ED times for One Piece episode 1
 curl -s 'https://aniskip-mirror.vercel.app/v1/skip-times/21/1?types=op,ed' | jq
+curl -s 'https://aniskip-mirror-cf.yasar-123-sevda.workers.dev/v1/skip-times/21/1?types=op,ed' | jq
 
 # Same query via v2 (camelCase + 404-on-empty)
 curl -s 'https://aniskip-mirror.vercel.app/v2/skip-times/21/1?types=op,ed' | jq
@@ -47,11 +55,12 @@ vote) return `403`. If you want to accept submissions, see
 5. [Local development](#local-development)
 6. [Dataset import](#dataset-import)
 7. [Vercel deployment](#vercel-deployment)
-8. [GitHub Actions: weekly update](#github-actions-weekly-update)
-9. [API endpoints](#api-endpoints)
-10. [Example requests](#example-requests)
-11. [Enabling writes (optional)](#enabling-writes-optional)
-12. [Troubleshooting](#troubleshooting)
+8. [Cloudflare Worker + R2 (edge mirror)](#cloudflare-worker--r2-edge-mirror)
+9. [GitHub Actions: weekly update](#github-actions-weekly-update)
+10. [API endpoints](#api-endpoints)
+11. [Example requests](#example-requests)
+12. [Enabling writes (optional)](#enabling-writes-optional)
+13. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -59,30 +68,48 @@ vote) return `403`. If you want to accept submissions, see
 
 ```
                     ┌────────────────────┐
-                    │ AniSkip Public CSV  │  (raw.githubusercontent.com)
+                    │ AniSkip Public CSV │  (raw.githubusercontent.com)
                     └─────────┬──────────┘
                               │  Python importer (psycopg2 + COPY)
                               ▼
                     ┌────────────────────┐
                     │ Neon PostgreSQL    │  skip_times table
                     └─────────┬──────────┘
-                              │  Vercel serverless function
-                              ▼
-                    ┌────────────────────┐
-                    │ AniSkip-Compatible │  /v1/skip-times/...
-                    │ API                │  /v2/skip-times/...
-                    └─────────┬──────────┘
-                              ▼
-                          Public HTTPS
-                              ▼
-                       Anime applications
+                              │
+              ┌───────────────┴───────────────┐
+              │                               │
+              ▼                               ▼
+   ┌────────────────────┐          ┌────────────────────┐
+   │ Vercel + Neon      │  ──push──▶│ Cloudflare R2      │
+   │ (source of truth)  │          │ aniskip-mirror-data│
+   │ /v1, /v2 endpoints │          │ v1/<animeId>.json  │
+   │                    │          │ v2/<animeId>.json  │
+   └─────────┬──────────┘          └─────────┬──────────┘
+             │                               │
+             ▼                               ▼
+   ┌────────────────────┐          ┌────────────────────┐
+   │ Vercel serverless  │          │ Cloudflare Worker  │
+   │  /v1, /v2 (always  │          │  /v1, /v2 (edge    │
+   │  fresh, EU)        │          │  cached, global)   │
+   └─────────┬──────────┘          └─────────┬──────────┘
+             │                               │
+             └───────────────┬───────────────┘
+                             ▼
+                      Anime applications
 ```
 
-- **API:** Node.js, `@vercel/node` runtime. Each endpoint is a single
-  file under `api/`. Hot path uses parameterized SQL with a
+- **API (Vercel):** Node.js, `@vercel/node` runtime. Each endpoint is
+  a single file under `api/`. Hot path uses parameterized SQL with a
   `(anime_id, episode_number, skip_type, votes DESC)` covering index.
+- **API (Cloudflare):** Same shape, served by `cf-worker/src/index.js`.
+  Reads pre-built JSON from R2 and wraps it with a 7-day edge cache.
 - **Importer:** Python 3.12, `psycopg2-binary`. Streams the CSV
   through a temp table and inserts in one transaction.
+- **R2 populator:** `cf-worker/scripts/populate_r2_per_anime.py`. Reads
+  the database once and writes one JSON per anime to R2
+  (`v1/<animeId>.json` and `v2/<animeId>.json`), collapsing ~75k
+  per-type rows into ~3k per-anime files. The Worker then parses
+  those files at request time and returns the upstream-shaped body.
 - **Database:** PostgreSQL 16 (Neon). Uses `pgcrypto` for
   `gen_random_uuid()`.
 
@@ -223,6 +250,11 @@ Re-running is idempotent for already-imported rows.
    | `DATABASE_URL` | your Neon connection string | Production (and Preview if you want previews to work) |
    | `CORS_ORIGINS` | `*` (or comma-separated list of origins) | Production |
    | `NODE_ENV` | `production` | Production |
+   | `R2_ENDPOINT` | `https://<ACCOUNT_ID>.r2.cloudflarestorage.com` | Production (for the admin upload endpoint) |
+   | `R2_BUCKET` | your R2 bucket name (e.g. `aniskip-mirror-data`) | Production |
+   | `R2_ACCESS_KEY_ID` | R2 API token access key | Production |
+   | `R2_SECRET_ACCESS_KEY` | R2 API token secret key | Production |
+   | `ADMIN_TOKEN` | a long random string | Production (required to call `/admin/upload-r2`) |
 
 5. **Deploy**. Vercel will run `vercel.json` and expose the endpoints
    listed below.
@@ -235,6 +267,139 @@ Re-running is idempotent for already-imported rows.
 
 You can point any AniSkip-compatible client at the root URL with no
 further changes.
+
+### Populating the R2 edge cache
+
+Once Vercel is serving traffic, you can mirror the dataset into a
+Cloudflare R2 bucket so the Cloudflare Worker can serve it with
+sub-100ms global latency. The admin endpoint at `/admin/upload-r2`
+streams rows from the database in paginated chunks and writes one
+JSON per anime into the bucket:
+
+```bash
+ADMIN_TOKEN=...   # the same value you set in Vercel
+URL=https://<your-project>.vercel.app
+
+offset=0
+while :; do
+  resp=$(curl -fsS -X POST -H "x-admin-token: $ADMIN_TOKEN" \
+    "$URL/admin/upload-r2?offset=$offset&limit=2000")
+  echo "$resp"
+  next=$(echo "$resp" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("next_offset",-1))')
+  ok=$(echo "$resp" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("ok",0))')
+  err=$(echo "$resp" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("errs",0))')
+  if [ -z "$next" ] || [ "$next" -le "$offset" ] || [ "$ok" = "0" ] && [ "$err" = "0" ]; then
+    break
+  fi
+  offset=$next
+done
+```
+
+The full 75k rows finish in ~4 minutes (Vercel Hobby 10s timeout per
+chunk is respected via `?limit=2000`). A weekly GitHub Action can call
+the same endpoint to keep R2 in sync after each dataset refresh.
+
+---
+
+## Cloudflare Worker + R2 (edge mirror)
+
+For global low-latency reads, mirror the dataset into a Cloudflare R2
+bucket and serve it with a Cloudflare Worker. The Worker returns the
+exact same response shape as Vercel, so the client only needs to swap
+the base URL.
+
+### 1. Create the R2 bucket
+
+```bash
+# Log in with wrangler (creates a scoped API token on first use)
+npx wrangler login
+
+# Create the bucket
+npx wrangler r2 bucket create aniskip-mirror-data
+```
+
+Note the Cloudflare **account ID** (`wrangler whoami` shows it). You
+will need it for the next step.
+
+### 2. Create an R2 API token
+
+In the Cloudflare dashboard: **R2 → Manage R2 API Tokens → Create
+API token** with *Object Read & Write* scoped to
+`aniskip-mirror-data`. Save the `access_key_id` and
+`secret_access_key` somewhere safe - you will add them to Vercel as
+`R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`, and to your local
+machine for the populator.
+
+### 3. Configure the Worker
+
+`cf-worker/wrangler.toml` already binds an R2 bucket called `DATA`:
+
+```toml
+name = "aniskip-mirror-cf"
+main = "src/index.js"
+compatibility_date = "2024-12-01"
+
+[[r2_buckets]]
+binding = "DATA"
+bucket_name = "aniskip-mirror-data"
+```
+
+The handler in `cf-worker/src/index.js`:
+
+- Reads the per-anime JSON file from R2 (e.g. `v1/21.json` or
+  `v2/21.json`).
+- Picks the requested episode and skip types and returns the
+  upstream-shaped body.
+- Wraps every successful response in a 7-day Cloudflare cache
+  (`Cache-Control: public, s-maxage=604800`).
+- Returns 404 (with body) on missing data for v2, 200 with
+  `found:false` for v1.
+
+Deploy with:
+
+```bash
+cd cf-worker
+npm install
+npx wrangler deploy
+```
+
+The Worker is now reachable at
+`https://aniskip-mirror-cf.<your-subdomain>.workers.dev`.
+
+### 4. Populate R2 from the database
+
+`cf-worker/scripts/populate_r2_per_anime.py` reads the
+`skip_times` table from Neon and writes one JSON per anime:
+
+```bash
+export R2_ENDPOINT="https://<ACCOUNT_ID>.r2.cloudflarestorage.com"
+export R2_BUCKET="aniskip-mirror-data"
+export R2_ACCESS_KEY_ID="..."
+export R2_SECRET_ACCESS_KEY="..."
+export DATABASE_URL="postgresql://..."
+
+pip install boto3 psycopg2-binary
+python3 cf-worker/scripts/populate_r2_per_anime.py
+```
+
+This collapses the 75k per-row dataset into ~3k per-anime files.
+Re-run after every weekly dataset refresh, or trigger the
+`/admin/upload-r2` endpoint from the GitHub Action to keep the bucket
+in sync.
+
+### 5. Smoke test
+
+```bash
+CF=https://aniskip-mirror-cf.<your-subdomain>.workers.dev
+curl -s $CF/health
+curl -s "$CF/v1/skip-times/21/1?types=op,ed"
+curl -s "$CF/v2/skip-times/21/1?types=op,ed"
+```
+
+The Cloudflare mirror is read-only and updates with the same weekly
+cadence as Vercel. To use it as the primary, point your client at the
+Worker URL; to keep Vercel as the primary and the Worker as a hot
+fallback, configure your client with both URLs.
 
 ---
 
@@ -275,6 +440,7 @@ All routes accept CORS preflight (`OPTIONS`) and respond with
 | POST | `/v1/skip-times/vote/:skip_id` | `403` | disabled |
 | POST | `/v2/skip-times/:animeId/:episodeNumber` | `403` | disabled |
 | POST | `/v2/skip-times/vote/:skipId` | `403` | disabled |
+| POST | `/admin/upload-r2?offset=N&limit=N` | `{ok, errs, skipped, next_offset, ...}` | requires `x-admin-token: $ADMIN_TOKEN`; streams a paginated chunk from `skip_times` into the R2 bucket |
 
 ### Query parameters (GET skip-times)
 
@@ -378,6 +544,21 @@ have skips**
 - The first cold start runs the connection pool warmup. Subsequent
   requests are < 50 ms in our tests. If you see sustained timeouts,
   check the Neon status page and your connection-string region.
+
+**Cloudflare Worker returns 500 on the first request after deploy**
+- The R2 binding needs at least one object to exist before the
+  Worker can serve traffic. Re-run the populator and the next
+  request will be served from the edge cache.
+
+**`/admin/upload-r2` returns 401**
+- The `ADMIN_TOKEN` env var is missing on Vercel or the
+  `x-admin-token` request header does not match. Vercel env var
+  changes require a redeploy.
+
+**`/admin/upload-r2` returns `FUNCTION_INVOCATION_TIMEOUT`**
+- Vercel Hobby caps serverless functions at 10s. Keep `limit` at
+  2000 or below, or upgrade to Vercel Pro (60s default, 5 min
+  with `vercel.json` `functions` config) to push larger chunks.
 
 ---
 

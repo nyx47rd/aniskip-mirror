@@ -10,7 +10,8 @@
     { "src": "/v2/skip-times/vote", "dest": "/api/v2/skip-times/vote.js" },
     { "src": "/v2/skip-times/vote/(.*)", "dest": "/api/v2/skip-times/vote.js" },
     { "src": "/v2/skip-times/([0-9]+)/([0-9.]+)", "dest": "/api/v2/skip-times/[animeId]/[episodeNumber].js" },
-    { "src": "/v2/relation-rules/([0-9]+)", "dest": "/api/v2/relation-rules/[animeId].js" }
+    { "src": "/v2/relation-rules/([0-9]+)", "dest": "/api/v2/relation-rules/[animeId].js" },
+    { "src": "/admin/upload-r2", "dest": "/api/health.js" }
   ],
   "env": {
     "NODE_ENV": "production"
