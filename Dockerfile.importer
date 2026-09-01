@@ -1,0 +1,16 @@
+# Run the importer against an existing Postgres / Neon database.
+#
+# Usage:
+#   docker build -t aniskip-mirror-importer .
+#   docker run --rm --env-file=.env aniskip-mirror-importer --csv /data/skip_times_public.csv
+#
+# Drop skip_times_public.csv into ./data/ first if you have a local copy,
+# otherwise leave CSV_SOURCE_URL set in .env and let it download.
+FROM python:3.12-slim
+WORKDIR /app
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+COPY scripts/ ./scripts/
+COPY sql/ ./sql/
+ENTRYPOINT ["python3", "scripts/import_dataset.py"]
+CMD ["--help"]

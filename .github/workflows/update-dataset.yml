@@ -1,0 +1,71 @@
+name: Update dataset
+
+on:
+  # Run once a week (Sunday 03:17 UTC).
+  schedule:
+    - cron: "17 3 * * 0"
+  workflow_dispatch:
+
+concurrency:
+  group: dataset-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install importer deps
+        run: pip install -r requirements.txt
+
+      - name: Apply schema
+        env:
+            DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          pip install -q psycopg2-binary
+          python3 - <<'PY'
+          import os, psycopg2
+          url = os.environ['DATABASE_URL']
+          with open('sql/init.sql') as f: init_sql = f.read()
+          with open('sql/migrations/001_relax_constraints.sql') as f: mig = f.read()
+          with psycopg2.connect(url) as conn, conn.cursor() as cur:
+              cur.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto;")
+              cur.execute(init_sql)
+              cur.execute(mig)
+              conn.commit()
+          print("schema applied")
+          PY
+
+      - name: Import dataset
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          CSV_SOURCE_URL: ${{ vars.CSV_SOURCE_URL || 'https://raw.githubusercontent.com/aniskip/sanitize_db_dump/main/skip_times_public.csv' }}
+        run: python3 scripts/update_dataset.py
+
+      - name: Validate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python3 scripts/validate_dataset.py
+
+      - name: Smoke-test API
+        env:
+          BASE_URL: ${{ vars.API_BASE_URL || '' }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        if: env.BASE_URL != ''
+        run: |
+          set -euo pipefail
+          # Hit /health and /v1/skip-times/21/1 (well-known record in the CSV).
+          curl -fsS "$BASE_URL/health" | tee /tmp/health.json
+          echo
+          curl -fsS "$BASE_URL/v1/skip-times/21/1?types=op" | tee /tmp/v1.json
+          echo
+          # Validate shape: must have found + results[]
+          node -e "const j=JSON.parse(require('fs').readFileSync('/tmp/v1.json','utf8')); if(typeof j.found !== 'boolean') throw new Error('missing found'); if(!Array.isArray(j.results)) throw new Error('missing results'); console.log('v1 OK', j);"

@@ -1,0 +1,57 @@
+# docker-compose for self-hosting the AniSkip Mirror API together with
+# a local Postgres (useful if you don't want to use Neon). For Neon
+# just point DATABASE_URL at it.
+#
+#   docker compose up -d
+#
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  importer:
+    build:
+      context: .
+      dockerfile: Dockerfile.importer
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/db
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+    # import once on startup and exit
+    command: ["--csv", "/data/skip_times_public.csv"]
+
+  api:
+    image: node:20-slim
+    working_dir: /app
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/db
+      CORS_ORIGINS: "*"
+      NODE_ENV: production
+    volumes:
+      - ./api:/app/api:ro
+      - ./vercel.json:/app/vercel.json:ro
+    command: sh -c "npm install --omit=dev && node api/_server.js"
+    ports:
+      - "3000:3000"
+    depends_on:
+      importer:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:

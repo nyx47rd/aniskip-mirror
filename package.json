@@ -1,0 +1,29 @@
+{
+  "name": "aniskip-mirror",
+  "version": "1.0.0",
+  "description": "Self-hosted AniSkip-compatible API. Reads the public AniSkip skip-time dataset, stores it in Postgres, and exposes /v1 and /v2 endpoints with the same shape as the official AniSkip API.",
+  "main": "api/index.js",
+  "scripts": {
+    "dev": "vercel dev",
+    "test": "node --test tests/",
+    "lint": "node -e \"console.log('No linter configured')\""
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^0.9.0",
+    "pg": "^8.12.0"
+  },
+  "devDependencies": {
+    "supertest": "^7.0.0"
+  },
+  "license": "MIT",
+  "keywords": [
+    "aniskip",
+    "anime",
+    "skip-times",
+    "api"
+  ],
+  "author": "nyx47rd"
+}

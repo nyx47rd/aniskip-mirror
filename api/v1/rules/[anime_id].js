@@ -1,0 +1,90 @@
+// Relation rules are served from a static file in the official API
+// (deps/anime-relations/anime-relations.txt). For the public read-only
+// mirror we ship an empty list by default; users can drop a file into
+// /data/anime-relations.txt (mounted into the container) and we'll
+// parse it on first request. Without that file we return the same
+// empty shape the original returns when no rules exist.
+const {json,
+  handleOptions,
+  applyCors,
+  rateLimit,
+  parsePositiveInt,} = require('../../lib-http.js');
+const {readFile} = require('node:fs/promises');
+const {existsSync} = require('node:fs');
+const {join} = require('node:path');
+
+const rl = rateLimit({ windowMs: 60_000, max: 120 });
+
+let cache = null;
+let cacheMtime = 0;
+const RULES_PATH = process.env.RELATION_RULES_PATH || '/data/anime-relations.txt';
+
+function parseRules(text) {
+  // Format mirrors deps/anime-relations/anime-relations.txt:
+  //   ::rules <malId>
+  //   <malId> <start> <end>  <->  <malId> <start> <end>
+  //   ::meta ...
+  //   ...
+  const byAnime = new Map();
+  let currentAnime = null;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+    if (line.startsWith('::rules')) {
+      currentAnime = parseInt(line.split(/\s+/)[1], 10);
+      if (!byAnime.has(currentAnime)) byAnime.set(currentAnime, []);
+      continue;
+    }
+    if (line.startsWith('::meta')) {
+      currentAnime = null;
+      continue;
+    }
+    if (currentAnime == null) continue;
+    // <fromId> <fromStart> <fromEnd> <-> <toId> <toStart> <toEnd>
+    const m = line.match(
+      /^(\d+)\s+(\d+)\s+(\d+)\s+<->\s+(\d+)\s+(\d+)\s+(\d+)$/
+    );
+    if (!m) continue;
+    byAnime.get(currentAnime).push({
+      from: { malId: parseInt(m[1], 10), start: parseInt(m[2], 10), end: parseInt(m[3], 10) },
+      to:   { malId: parseInt(m[4], 10), start: parseInt(m[5], 10), end: parseInt(m[6], 10) },
+    });
+  }
+  return byAnime;
+}
+
+async function getRules() {
+  if (!existsSync(RULES_PATH)) return new Map();
+  const stat = await import('node:fs/promises').then((m) => m.stat(RULES_PATH));
+  if (cache && stat.mtimeMs === cacheMtime) return cache;
+  const text = await readFile(RULES_PATH, 'utf8');
+  cache = parseRules(text);
+  cacheMtime = stat.mtimeMs;
+  return cache;
+}
+
+module.exports = async function handler(req, res) {
+  applyCors(req, res);
+  if (req.method === 'OPTIONS') return handleOptions(req, res);
+  if (req.method !== 'GET') {
+    return json(req, res, 405, { message: 'Method not allowed' });
+  }
+  if (!rl(req, res)) return;
+
+  let animeId;
+  try {
+    const parts = (req.url || '').split('?')[0].split('/').filter(Boolean);
+    animeId = parsePositiveInt(parts[2] ?? req.query.anime_id, 'anime_id');
+  } catch (e) {
+    return json(req, res, 400, { message: e.message });
+  }
+
+  let rules = [];
+  try {
+    const map = await getRules();
+    rules = map.get(animeId) || [];
+  } catch (err) {
+    console.error('[v1 rules] parse error', err);
+  }
+  return json(req, res, 200, { found: rules.length > 0, rules });
+}
