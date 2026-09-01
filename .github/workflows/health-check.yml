@@ -1,0 +1,33 @@
+name: Health check
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"   # every 6 hours
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Ping /health
+        env:
+          BASE_URL: ${{ vars.API_BASE_URL || 'https://aniskip-mirror.vercel.app' }}
+        run: |
+          set -euo pipefail
+          HTTP_CODE=$(curl -s -o /tmp/health.json -w "%{http_code}" "$BASE_URL/health")
+          echo "http=$HTTP_CODE"
+          cat /tmp/health.json
+          echo
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error title=Health check failed::HTTP $HTTP_CODE from $BASE_URL/health"
+            exit 1
+          fi
+          python3 - <<'PY'
+          import json, sys
+          d = json.load(open('/tmp/health.json'))
+          if d.get('status') != 'ok' or d.get('database') != 'connected':
+              print(f"::error title=Health degraded::status={d.get('status')} database={d.get('database')}")
+              sys.exit(1)
+          print("status=ok, database=connected")
+          PY

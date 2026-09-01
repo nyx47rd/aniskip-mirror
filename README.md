@@ -1,5 +1,9 @@
 # AniSkip Mirror by nyx47rd
 
+[![Tests](https://github.com/nyx47rd/aniskip-mirror/actions/workflows/tests.yml/badge.svg)](https://github.com/nyx47rd/aniskip-mirror/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Live](https://img.shields.io/badge/live-aniskip--mirror.vercel.app-blue)](https://aniskip-mirror.vercel.app/health)
+
 A self-hosted, **AniSkip-compatible** API for anime skip times (opening /
 ending / recap). It pulls the weekly public dataset from
 [`aniskip/sanitize_db_dump`](https://github.com/aniskip/sanitize_db_dump),
@@ -8,6 +12,19 @@ loads it into PostgreSQL (Neon in production), and serves it through the
 [`aniskip/aniskip-api`](https://github.com/aniskip/aniskip-api) exposes -
 so anime apps that already talk to `api.aniskip.com` can point at your
 URL with no client-side changes.
+
+**Live instance:** <https://aniskip-mirror.vercel.app>
+
+```bash
+# One-liner health check (mirror + database)
+curl -s https://aniskip-mirror.vercel.app/health | jq
+
+# Get OP + ED times for One Piece episode 1
+curl -s 'https://aniskip-mirror.vercel.app/v1/skip-times/21/1?types=op,ed' | jq
+
+# Same query via v2 (camelCase + 404-on-empty)
+curl -s 'https://aniskip-mirror.vercel.app/v2/skip-times/21/1?types=op,ed' | jq
+```
 
 The mirror is intentionally **read-only**. POST endpoints (create /
 vote) return `403`. If you want to accept submissions, see
